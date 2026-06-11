@@ -6,10 +6,11 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
 
 ROOT = Path(__file__).resolve().parent
@@ -94,6 +95,55 @@ def run_command(args, stdout_path, stderr_path):
     return process.returncode
 
 
+def download_source_video(url, cookie_mode):
+    yt_dlp = shutil.which("yt-dlp")
+    if not yt_dlp:
+        raise RuntimeError("No encontre yt-dlp en el servidor.")
+
+    before = {path.resolve() for path in SOURCE_DIR.glob("*") if path.is_file()}
+    output_template = str(SOURCE_DIR / "%(id)s.%(ext)s")
+    args = [
+        yt_dlp,
+        "--no-playlist",
+        "--force-overwrites",
+        "--restrict-filenames",
+        "--windows-filenames",
+        "-f",
+        "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        output_template,
+        url,
+    ]
+
+    if cookie_mode == "cookies-file":
+        cookies_path = ROOT / "cookies.txt"
+        if cookies_path.exists():
+            args[1:1] = ["--cookies", str(cookies_path)]
+        else:
+            raise RuntimeError("No encontre cookies.txt en el servidor.")
+    elif cookie_mode and cookie_mode != "none":
+        raise RuntimeError(
+            "En la version web no se pueden leer cookies del navegador del visitante. "
+            "Usa reels publicos o cookies.txt en el servidor."
+        )
+
+    code = run_command(args, ROOT / "last-output.log", ROOT / "last-error.log")
+    after = sorted((path for path in SOURCE_DIR.glob("*") if path.is_file()), key=lambda p: p.stat().st_mtime, reverse=True)
+    new_files = [path for path in after if path.resolve() not in before]
+    new_file = new_files[0] if new_files else (after[0] if after else None)
+
+    if code != 0:
+        stderr = (ROOT / "last-error.log").read_text(encoding="utf-8", errors="replace")
+        raise RuntimeError(stderr.strip() or "No se pudo descargar.")
+
+    if not new_file:
+        raise RuntimeError("La descarga termino, pero no encontre el archivo.")
+
+    return new_file
+
+
 def convert_to_whatsapp(input_path, output_path):
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -163,64 +213,11 @@ def process_job(job_id, urls, cookie_mode):
             item["message"] = "Descargando"
             update_job(job)
 
-            before = {path.resolve() for path in SOURCE_DIR.glob("*") if path.is_file()}
-            output_template = str(SOURCE_DIR / "%(id)s.%(ext)s")
-            args = [
-                yt_dlp,
-                "--no-playlist",
-                "--force-overwrites",
-                "--restrict-filenames",
-                "--windows-filenames",
-                "-f",
-                "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-                "--merge-output-format",
-                "mp4",
-                "-o",
-                output_template,
-                url,
-            ]
-
-            if cookie_mode == "cookies-file":
-                cookies_path = ROOT / "cookies.txt"
-                if cookies_path.exists():
-                    args[1:1] = ["--cookies", str(cookies_path)]
-                else:
-                    item["status"] = "error"
-                    item["message"] = "No encontre cookies.txt en el servidor."
-                    item["exitCode"] = 1
-                    update_job(job)
-                    continue
-            elif cookie_mode and cookie_mode != "none":
-                item["status"] = "error"
-                item["message"] = "En la version web no se pueden leer cookies del navegador del visitante. Usa reels publicos o cookies.txt en el servidor."
-                item["exitCode"] = 1
-                update_job(job)
-                continue
-
-            code = run_command(args, ROOT / "last-output.log", ROOT / "last-error.log")
             job = load_job(job_id)
             item = job["items"][index]
-            item["exitCode"] = code
-
-            after = sorted((path for path in SOURCE_DIR.glob("*") if path.is_file()), key=lambda p: p.stat().st_mtime, reverse=True)
-            new_files = [path for path in after if path.resolve() not in before]
-            new_file = new_files[0] if new_files else (after[0] if after else None)
-
-            if code != 0:
-                stderr = (ROOT / "last-error.log").read_text(encoding="utf-8", errors="replace")
-                item["status"] = "error"
-                item["message"] = stderr.strip() or "No se pudo descargar."
-                update_job(job)
-                continue
-
-            if not new_file:
-                item["status"] = "error"
-                item["message"] = "La descarga termino, pero no encontre el archivo."
-                item["exitCode"] = 1
-                update_job(job)
-                continue
 
             try:
+                new_file = download_source_video(url, cookie_mode)
                 item["message"] = "Convirtiendo para WhatsApp"
                 update_job(job)
                 ready_name = f"{safe_filename(new_file.stem)} - WhatsApp.mp4"
@@ -287,6 +284,45 @@ def start_download():
     thread = threading.Thread(target=process_job, args=(job_id, urls, clean_url(payload.get("browser", "none"))), daemon=True)
     thread.start()
     return jsonify(job), 202
+
+
+@app.post("/download-now")
+def download_now():
+    raw_urls = request.form.get("urls", "")
+    cookie_mode = clean_url(request.form.get("browser", "none"))
+    urls = [clean_url(url) for url in raw_urls.splitlines()]
+    urls = [url for url in urls if url and is_instagram_url(url)]
+
+    if not urls:
+        return Response("Pega al menos un enlace valido de Instagram.", 400, mimetype="text/plain")
+
+    ready_files = []
+    errors = []
+    for url in urls:
+        try:
+            source_file = download_source_video(url, cookie_mode)
+            ready_name = f"{safe_filename(source_file.stem)} - WhatsApp.mp4"
+            ready_path = DOWNLOAD_DIR / ready_name
+            convert_to_whatsapp(source_file, ready_path)
+            ready_files.append(ready_path)
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+
+    if not ready_files:
+        return Response("\n".join(errors) or "No se pudo descargar.", 500, mimetype="text/plain")
+
+    if len(ready_files) == 1:
+        return send_file(ready_files[0], as_attachment=True, download_name=ready_files[0].name)
+
+    zip_name = f"instagram-whatsapp-{int(time.time())}.zip"
+    zip_path = DOWNLOAD_DIR / zip_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for ready_file in ready_files:
+            archive.write(ready_file, arcname=ready_file.name)
+        if errors:
+            archive.writestr("errores.txt", "\n".join(errors))
+
+    return send_file(zip_path, as_attachment=True, download_name=zip_name)
 
 
 @app.get("/api/jobs/<job_id>")
