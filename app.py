@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -226,7 +227,7 @@ def process_job(job_id, urls, cookie_mode):
                 item["status"] = "done"
                 item["message"] = "Listo para WhatsApp"
                 item["file"] = str(ready_path)
-                item["downloadUrl"] = f"/files/{ready_name}"
+                item["downloadUrl"] = f"/files/{quote(ready_name)}"
             except Exception as exc:
                 item["status"] = "error"
                 item["message"] = str(exc)
@@ -305,7 +306,7 @@ def downloads():
                     "FullName": str(path),
                     "Length": path.stat().st_size,
                     "LastWriteTime": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(path.stat().st_mtime)),
-                    "Url": f"/files/{path.name}",
+                    "Url": f"/files/{quote(path.name)}",
                 }
             )
     return jsonify({"downloadDir": str(DOWNLOAD_DIR), "files": files})
