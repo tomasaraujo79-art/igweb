@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Descargador de Instagram</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Descargas locales</p>
+          <h1>Instagram videos</h1>
+        </div>
+        <button id="refreshFiles" class="icon-button" title="Actualizar archivos" aria-label="Actualizar archivos">
+          <span aria-hidden="true">↻</span>
+        </button>
+      </header>
+
+      <form id="downloadForm" class="panel">
+        <label for="urls">Enlaces</label>
+        <textarea id="urls" name="urls" spellcheck="false" placeholder="https://www.instagram.com/reel/...&#10;https://www.instagram.com/p/..."></textarea>
+
+        <div class="controls">
+          <label class="select-label" for="browser">Cookies</label>
+          <select id="browser" name="browser">
+            <option value="none">Sin navegador</option>
+            <option value="chrome">Chrome</option>
+            <option value="edge">Edge</option>
+            <option value="firefox">Firefox</option>
+            <option value="brave">Brave</option>
+            <option value="cookies-file">cookies.txt</option>
+          </select>
+          <button id="startButton" type="submit">Descargar</button>
+        </div>
+      </form>
+
+      <section class="split">
+        <div class="panel">
+          <div class="section-head">
+            <h2>Estado</h2>
+            <span id="jobStatus" class="badge">Sin trabajo</span>
+          </div>
+          <div id="statusList" class="status-list empty">Pegá enlaces y empezá una descarga.</div>
+        </div>
+
+        <div class="panel">
+          <div class="section-head">
+            <h2>Listos para WhatsApp</h2>
+            <span id="downloadDir" class="dir"></span>
+          </div>
+          <div id="fileList" class="file-list empty">Todavía no hay archivos descargados.</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
