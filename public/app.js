@@ -9,6 +9,8 @@ const refreshFiles = document.querySelector("#refreshFiles");
 const downloadDir = document.querySelector("#downloadDir");
 
 let pollTimer = null;
+let activeJobId = null;
+const autoDownloaded = new Set();
 
 function linesToUrls(value) {
   return value
@@ -64,6 +66,31 @@ function renderJob(job) {
     head.append(url, state);
     row.append(head, message);
     statusList.append(row);
+  });
+}
+
+function triggerBrowserDownload(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function autoDownloadReadyItems(job) {
+  if (!job || job.id !== activeJobId || !Array.isArray(job.items)) {
+    return;
+  }
+
+  job.items.forEach((item) => {
+    if (item.status !== "done" || !item.downloadUrl || autoDownloaded.has(item.downloadUrl)) {
+      return;
+    }
+
+    autoDownloaded.add(item.downloadUrl);
+    triggerBrowserDownload(item.downloadUrl);
   });
 }
 
@@ -138,6 +165,7 @@ async function pollJob(jobId) {
   }
 
   renderJob(job);
+  autoDownloadReadyItems(job);
 
   if (["done", "finished_with_errors"].includes(job.status)) {
     clearInterval(pollTimer);
@@ -175,6 +203,8 @@ form.addEventListener("submit", async (event) => {
     }
 
     renderJob(payload);
+    activeJobId = payload.id;
+    autoDownloaded.clear();
     await pollJob(payload.id);
     pollTimer = setInterval(() => pollJob(payload.id), 1800);
     startButton.textContent = "Descargando";
