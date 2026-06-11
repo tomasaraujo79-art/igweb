@@ -119,8 +119,24 @@ async function refreshDownloadList() {
 }
 
 async function pollJob(jobId) {
-  const response = await fetch(`/api/jobs/${jobId}`);
-  const job = await response.json();
+  let job;
+  try {
+    const response = await fetch(`/api/jobs/${jobId}`);
+    job = await response.json();
+    if (!response.ok) {
+      throw new Error(job.error || "No se pudo consultar el estado.");
+    }
+  } catch (error) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    setStatus("Error");
+    statusList.className = "status-list empty";
+    statusList.textContent = error.message;
+    startButton.disabled = false;
+    startButton.textContent = "Descargar";
+    return;
+  }
+
   renderJob(job);
 
   if (["done", "finished_with_errors"].includes(job.status)) {
