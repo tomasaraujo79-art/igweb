@@ -11,8 +11,6 @@ const downloadDir = document.querySelector("#downloadDir");
 let pollTimer = null;
 let activeJobId = null;
 const autoDownloaded = new Set();
-let directFrame = null;
-let directResetTimer = null;
 
 function linesToUrls(value) {
   return value
@@ -96,25 +94,10 @@ function autoDownloadReadyItems(job) {
   });
 }
 
-function ensureDirectFrame() {
-  if (directFrame) {
-    return directFrame;
-  }
-
-  directFrame = document.createElement("iframe");
-  directFrame.name = "downloadFrame";
-  directFrame.style.display = "none";
-  document.body.append(directFrame);
-  return directFrame;
-}
-
 function submitDirectDownload(urlsText, cookieMode) {
-  ensureDirectFrame();
-
   const directForm = document.createElement("form");
   directForm.method = "POST";
   directForm.action = "/download-now";
-  directForm.target = "downloadFrame";
   directForm.style.display = "none";
 
   const urlsField = document.createElement("textarea");
@@ -225,8 +208,8 @@ form.addEventListener("submit", async (event) => {
   }
 
   startButton.disabled = true;
-  startButton.textContent = "Procesando";
-  setStatus("Procesando");
+  startButton.textContent = "Preparando";
+  setStatus("Preparando");
   statusList.className = "status-list";
   statusList.innerHTML = "";
 
@@ -240,23 +223,22 @@ form.addEventListener("submit", async (event) => {
     urlText.textContent = url;
     const state = document.createElement("span");
     state.className = "state running";
-    state.textContent = "procesando";
+    state.textContent = "preparando";
     const message = document.createElement("div");
     message.className = "message";
-    message.textContent = "Preparando archivo para WhatsApp";
+    message.textContent = "Preparando descarga";
     head.append(urlText, state);
     row.append(head, message);
     statusList.append(row);
   });
 
   submitDirectDownload(urlsInput.value, browserInput.value);
-  clearTimeout(directResetTimer);
-  directResetTimer = setTimeout(async () => {
+  setTimeout(async () => {
     startButton.disabled = false;
     startButton.textContent = "Descargar";
     setStatus("Listo");
     await refreshDownloadList();
-  }, 300000);
+  }, 45000);
 });
 
 refreshFiles.addEventListener("click", refreshDownloadList);
