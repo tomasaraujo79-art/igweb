@@ -149,6 +149,25 @@ def convert_to_whatsapp(input_path, output_path):
     if not ffmpeg:
         raise RuntimeError("No encontre ffmpeg en el servidor.")
 
+    copy_args = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(input_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    copy_code = run_command(copy_args, ROOT / "last-ffmpeg-output.log", ROOT / "last-ffmpeg-error.log")
+    if copy_code == 0 and output_path.exists() and output_path.stat().st_size > 0:
+        return
+
     args = [
         ffmpeg,
         "-y",
@@ -312,7 +331,14 @@ def download_now():
         return Response("\n".join(errors) or "No se pudo descargar.", 500, mimetype="text/plain")
 
     if len(ready_files) == 1:
-        return send_file(ready_files[0], as_attachment=True, download_name=ready_files[0].name)
+        response = send_file(
+            ready_files[0],
+            as_attachment=True,
+            download_name=ready_files[0].name,
+            mimetype="video/mp4",
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     zip_name = f"instagram-whatsapp-{int(time.time())}.zip"
     zip_path = DOWNLOAD_DIR / zip_name
@@ -352,6 +378,10 @@ def downloads():
 
 @app.get("/files/<path:name>")
 def download_file(name):
+    if name.lower().endswith(".mp4"):
+        response = send_from_directory(DOWNLOAD_DIR, name, as_attachment=True, mimetype="video/mp4")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
     return send_from_directory(DOWNLOAD_DIR, name, as_attachment=True)
 
 
