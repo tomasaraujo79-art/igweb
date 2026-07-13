@@ -94,27 +94,6 @@ function autoDownloadReadyItems(job) {
   });
 }
 
-function submitDirectDownload(urlsText, cookieMode) {
-  const directForm = document.createElement("form");
-  directForm.method = "POST";
-  directForm.action = "/download-now";
-  directForm.style.display = "none";
-
-  const urlsField = document.createElement("textarea");
-  urlsField.name = "urls";
-  urlsField.value = urlsText;
-
-  const browserField = document.createElement("input");
-  browserField.type = "hidden";
-  browserField.name = "browser";
-  browserField.value = cookieMode;
-
-  directForm.append(urlsField, browserField);
-  document.body.append(directForm);
-  directForm.submit();
-  directForm.remove();
-}
-
 function renderFiles(payload) {
   downloadDir.textContent = payload.downloadDir || "";
   const files = payload.files || [];
@@ -186,7 +165,6 @@ async function pollJob(jobId) {
   }
 
   renderJob(job);
-  autoDownloadReadyItems(job);
 
   if (["done", "finished_with_errors"].includes(job.status)) {
     clearInterval(pollTimer);
@@ -208,37 +186,34 @@ form.addEventListener("submit", async (event) => {
   }
 
   startButton.disabled = true;
-  startButton.textContent = "Preparando";
-  setStatus("Preparando");
-  statusList.className = "status-list";
-  statusList.innerHTML = "";
+  startButton.textContent = "Iniciando";
+  setStatus("Enviando");
 
-  urls.forEach((url) => {
-    const row = document.createElement("article");
-    row.className = "item";
-    const head = document.createElement("div");
-    head.className = "item-head";
-    const urlText = document.createElement("div");
-    urlText.className = "url";
-    urlText.textContent = url;
-    const state = document.createElement("span");
-    state.className = "state running";
-    state.textContent = "preparando";
-    const message = document.createElement("div");
-    message.className = "message";
-    message.textContent = "Preparando descarga";
-    head.append(urlText, state);
-    row.append(head, message);
-    statusList.append(row);
-  });
+  try {
+    const response = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls, browser: browserInput.value }),
+    });
 
-  submitDirectDownload(urlsInput.value, browserInput.value);
-  setTimeout(async () => {
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "No se pudo iniciar la descarga.");
+    }
+
+    renderJob(payload);
+    activeJobId = payload.id;
+    autoDownloaded.clear();
+    await pollJob(payload.id);
+    pollTimer = setInterval(() => pollJob(payload.id), 1800);
+    startButton.textContent = "Procesando";
+  } catch (error) {
+    setStatus("Error");
+    statusList.className = "status-list empty";
+    statusList.textContent = error.message;
     startButton.disabled = false;
     startButton.textContent = "Descargar";
-    setStatus("Listo");
-    await refreshDownloadList();
-  }, 45000);
+  }
 });
 
 refreshFiles.addEventListener("click", refreshDownloadList);
